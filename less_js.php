@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name:  Less.js in Wordpress
- * Plugin URI:   https://danieljosephryan.com/
+ * Plugin URI:   https://github.com/dryane/Less.js-In-Wordpress
  * Description:  Allows you to enqueue <code>.less</code> files and have them automatically compiled whenever a change is detected.
  * Author:       Daniel Joseph Ryan
  * Version:      1.0
