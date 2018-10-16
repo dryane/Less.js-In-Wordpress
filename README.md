@@ -5,7 +5,8 @@ A full description can be found [here](http://www.danieljosephryan.com/projects/
 But all you have to do is:
 
 	require get_template_directory() . '/less-js.php';
+	
 	add_action( 'wp_enqueue_scripts', 'enqueueLess', 1 );
 	function enqueueLess() {
-			wp_enqueue_style( 'less-style', '/style.less', array(), null, 'all');
-		}
+		wp_enqueue_style( 'less-style', '/style.less', array(), null, 'all');
+	}
