@@ -4,7 +4,7 @@
  * Plugin URI:   https://github.com/dryane/Less.js-In-Wordpress
  * Description:  Allows you to enqueue <code>.less</code> files and have them automatically compiled whenever a change is detected.
  * Author:       Daniel Joseph Ryan
- * Version:      1.2
+ * Version:      1.4
  * Author URI:   https://danieljosephryan.com/
  * License:      MIT
  */
@@ -15,7 +15,7 @@
 if ( ! class_exists( 'less_js' ) ) {
 	add_action( 'init', array( 'less_js', 'instance' ) );
 	class less_js {
-		
+
 		protected static $instance = null;
 		/**
 		 * Creates a new instance. Called on 'after_setup_theme'.
@@ -29,34 +29,37 @@ if ( ! class_exists( 'less_js' ) ) {
 			null === self:: $instance AND self:: $instance = new self;
 			return self:: $instance;
 		}
-		
+
 		public $alwaysCompile = false;
-		
+
 		public $directory = "/less-css/";
-		
+
 		public $lessLink = "https://cdnjs.cloudflare.com/ajax/libs/less.js/3.7.1/less.min.js";
-		
+
 		public $minify = true;
-		
+
+		public $enqueuedBefore = false;
+
 		public $vars = array();
-		
+
 		/**
 		 * Constructor
 		 */
 		public function __construct() {
 			add_filter( 'style_loader_tag', array( $this,'parse_enqueued_style'), 10, 4 ); 
-			
+
 			add_action( 'wp_ajax_save_less', array( $this,'save_less') );
 			add_action( 'wp_ajax_nopriv_save_less', array( $this,'save_less') );
+
+			add_action( 'customize_save_after', array( $this,'delete_less') );
 			
 		}
-		
+
 		public function parse_enqueued_style( $html, $handle, $href, $media ) {
-			$startTime = microtime(true);
 			if ( !strpos($html, '.less') ) { // If not .less
 				return $html;
 			}
-			
+
 			$serverCSSFile = $this->get_cache_dir(true) . $handle . ".css";
 			
 			if ( file_exists( $serverCSSFile ) ) {
@@ -82,15 +85,8 @@ if ( ! class_exists( 'less_js' ) ) {
 				return $html; 	
 			} 
 		}
-		public function enqueue_less_scripts() {
-			wp_enqueue_script( 'less-js', $this->lessLink, array('jquery') , null, false  );
-			
-			$this->vars['themeurl'] = '"' . get_stylesheet_directory_uri() . '"';
-			$this->vars['themedirectory'] = '"' . get_stylesheet_directory() . '"';
-			$this->vars['parenturl'] = '"' . get_template_directory_uri() . '"';
-			$this->vars['parentdirectory'] = '"' . get_template_directory() . '"';
-			$this->vars = apply_filters( 'less_vars', $this->vars, $handle );
-			
+		
+		public function variables() {
 			/**
 			 * How to Add More vars
 			 * variable names MUST be lowercase letters only
@@ -102,30 +98,41 @@ if ( ! class_exists( 'less_js' ) ) {
 			 * 
 			 **/
 			
+			$this->vars['themeurl'] = '"' . get_stylesheet_directory_uri() . '"';
+			$this->vars['themedirectory'] = '"' . get_stylesheet_directory() . '"';
+			$this->vars['parenturl'] = '"' . get_template_directory_uri() . '"';
+			$this->vars['parentdirectory'] = '"' . get_template_directory() . '"';
+			$this->vars = apply_filters( 'less_vars', $this->vars, $handle );
+			
 			$vars;
 			$values = $this->vars;
 			$keys = array_keys($this->vars);
 			
 			for ($i = 0; $i < count($keys); $i++) {
-				$vars .= $keys[$i] . ": '" . $values[$keys[$i]] . "'";
+				$vars .= '\'' . $keys[$i] . '\':\'' . $values[$keys[$i]] . '\'';
 				if ($i + 1 != count($keys)) {
-					$vars .= ",\n";
+					$vars .= ",";
 				}
-			} 
+			}
+			return $vars;
+			
+		}
+		public function enqueue_less_scripts() {
+			
+			if ($this->enqueuedBefore) {
+				return;
+			}
+			$this->enqueuedBefore = true;
 						
-			$before_script = <<<END
-<script>
-  less = {
-    globalVars: {
-$vars
-	}
-  };
-</script>	
-END;
+			wp_enqueue_script( 'less-js', $this->lessLink, array('jquery') , null, false  );
+
+			$vars = $this->variables();
+			
+			$before_script = "var less = {env:'development',errorReporting:'console',globalVars:{ $vars }};";
 			wp_add_inline_script( 'less-js', $before_script, 'before' );
 
 			$after_script = <<<END
-function sendLess(e){window.location.pathname.replace(RegExp("%","g"),"-").replace(RegExp("/","g"),"");var t=e.previousSibling.id.replace("-css",""),n=e.previousSibling.href,s=e.innerHTML,a={};a.name=t,a.href=n,a.css=s,jQuery.post(document.location.origin+"/wp-admin/admin-ajax.php",{action:"save_less",data:a})}document.addEventListener("DOMContentLoaded",function(){document.querySelector("html head").addEventListener("DOMNodeInserted",function(e){e.target.id.startsWith("less:")&&sendLess(e.target)},!1)},!1),jQuery(document).ready(function(){style=document.querySelectorAll("head style");for(var e=0;e<style.length;e++)style[e].id.startsWith("less:")&&sendLess(style[e])});
+function sendLess(e){window.location.pathname.replace(RegExp("%","g"),"-").replace(RegExp("/","g"),"");var t=e.previousSibling.id.replace("-css",""),s=e.previousSibling.href,n=e.innerHTML,a={};a.name=t,a.href=s,a.css=n,jQuery.post(document.location.origin+"/wp-admin/admin-ajax.php",{action:"save_less",data:a})}document.querySelector("html").addEventListener("DOMNodeInserted",function(e){try{e.target.id.startsWith("less:")&&sendLess(e.target)}catch(e){}}),jQuery(document).ready(function(){style=document.querySelectorAll("head style");for(var e=0;e<style.length;e++)style[e].id.startsWith("less:")&&sendLess(style[e])});
 END;
 			if (!$this->alwaysCompile) {		
 				wp_add_inline_script( 'less-js', $after_script, 'after' );	
@@ -151,6 +158,17 @@ END;
 
 			return;
 			
+		}
+		public function delete_less() {
+			$server = $this->get_cache_dir(true);
+			if ( file_exists( $server ) ) {
+				$files = glob($server . '*');
+				foreach($files as $file){
+					if(is_file($file)){
+						unlink($file);
+					}
+				}
+			}
 		}
 		/** Helper Functions **/
 		public function get_cache_dir($returnServer = false) {
@@ -193,3 +211,5 @@ END;
 		
 	}
 }
+
+do_action( 'customize_save_after', $array ); 
